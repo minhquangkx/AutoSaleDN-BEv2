@@ -1,0 +1,49 @@
+# Build results
+bin/
+obj/
+[Bb]uild/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+
+# Visual Studio files
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Visual Studio Code
+.vscode/
+
+# NuGet packages
+*.nupkg
+*.snupkg
+# Nếu muốn giữ file *.nupkg thì comment dòng trên lại
+# Bỏ qua thư mục packages (trừ file *.config)
+packages/*
+!packages/*.config
+
+# Logs
+*.log
+
+# Others
+*.dbmdl
+*.bak
+*.ldf
+*.mdf
+
+# Publish outputs
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.publishsettings
+
+# JetBrains Rider
+.idea/
+*.iml
+
+# dotenv
+.env
