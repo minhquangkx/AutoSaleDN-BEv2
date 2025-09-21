@@ -883,12 +883,12 @@ namespace AutoSaleDN.Controllers
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }
-
         [HttpGet("showrooms")]
         public async Task<IActionResult> GetShowrooms()
         {
             try
             {
+<<<<<<< HEAD
                 // Lấy dữ liệu cơ bản trước
                 var showrooms = await _context.StoreLocations
                     .Select(sl => new
@@ -930,6 +930,56 @@ namespace AutoSaleDN.Controllers
                     Models = GetPopularModels(s.Id),
                     SellerId = s.SellerId
                 }).ToList();
+=======
+                var startOfCurrentMonth = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+
+                var showroomsQuery = _context.StoreLocations.Select(sl => new ShowroomDto
+                {
+                    Id = sl.StoreLocationId,
+                    Name = sl.Name,
+                    Location = sl.Address,
+
+                    TotalCars = sl.StoreListings.Count(listing => !listing.IsCurrent),
+
+                    TotalSoldAllTime = sl.StoreListings.SelectMany(listing => listing.CarSales).Count(),
+
+                    // TÍNH SỐ XE ĐÃ BÁN DỰA TRÊN FULLPAYMENT ĐÃ HOÀN THÀNH
+                    SoldThisMonth = sl.StoreListings
+                        .SelectMany(listing => listing.CarSales)
+                        .Count(sale =>
+                            sale.FullPayment != null &&
+                            sale.FullPayment.PaymentStatus == "completed" &&
+                            sale.FullPayment.DateOfPayment >= startOfCurrentMonth
+                        ),
+
+                    Revenue = sl.StoreListings
+                                .SelectMany(listing => listing.CarSales)
+                                .Sum(sale =>
+                                    (sale.DepositPayment != null && sale.DepositPayment.PaymentStatus == "completed" ? (decimal?)sale.DepositPayment.Amount : 0m) +
+                                    (sale.FullPayment != null && sale.FullPayment.PaymentStatus == "completed" ? (decimal?)sale.FullPayment.Amount : 0m)
+                                ) ?? 0m,
+
+                    AllSellers = sl.Users.Select(u => new SellersDto
+                    {
+                        SellerId = u.UserId,
+                        FullName = u.FullName,
+                        Email = u.Email,
+                        PhoneNumber = u.Mobile
+                    }).ToList()
+                });
+
+                var result = await showroomsQuery.ToListAsync();
+
+                foreach (var showroom in result)
+                {
+                    showroom.MainSeller = showroom.AllSellers.FirstOrDefault();
+                    showroom.RevenueGrowth = GetRevenueGrowth(showroom.Id);
+                    showroom.Brands = GetBrandPerformance(showroom.Id);
+                    showroom.SalesData = await GetMonthlySalesDataLogic(showroom.Id);
+                    showroom.Inventory = GetRecentInventory(showroom.Id);
+                    showroom.PopularModels = GetPopularModels(showroom.Id);
+                }
+>>>>>>> 0e4a76f (Final Backend)
 
                 return Ok(result);
             }
@@ -944,13 +994,20 @@ namespace AutoSaleDN.Controllers
         {
             try
             {
+<<<<<<< HEAD
                 var showroom = await _context.StoreLocations
+=======
+                var startOfCurrentMonth = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+
+                var showroomDto = await _context.StoreLocations
+>>>>>>> 0e4a76f (Final Backend)
                     .Where(sl => sl.StoreLocationId == id)
                     .Select(sl => new ShowroomDto
                     {
                         Id = sl.StoreLocationId,
                         Name = sl.Name,
                         Location = sl.Address,
+<<<<<<< HEAD
                         TotalCars = sl.StoreListings.Sum(sl => sl.CurrentQuantity),
                         SoldThisMonth = _context.CarSales
                             .Where(s => s.StoreListing.StoreLocationId == id 
@@ -965,13 +1022,48 @@ namespace AutoSaleDN.Controllers
                         SalesData = GetMonthlySalesData(id),
                         Inventory = GetRecentInventory(id),
                         Models = GetPopularModels(id)
+=======
+
+                        TotalCars = sl.StoreListings.Count(listing => !listing.IsCurrent),
+
+                        SoldThisMonth = sl.StoreListings
+                            .SelectMany(listing => listing.CarSales)
+                            .Count(sale =>
+                                sale.FullPayment != null &&
+                                sale.FullPayment.PaymentStatus == "completed" &&
+                                sale.FullPayment.DateOfPayment >= startOfCurrentMonth
+                            ),
+
+                        // SỬA LẠI TẠI ĐÂY: Quay lại logic tính tổng trực tiếp
+                        Revenue = sl.StoreListings
+                            .SelectMany(listing => listing.CarSales)
+                            .Sum(sale =>
+                                (sale.DepositPayment != null && sale.DepositPayment.PaymentStatus == "completed" ? (decimal?)sale.DepositPayment.Amount : 0m) +
+                                (sale.FullPayment != null && sale.FullPayment.PaymentStatus == "completed" ? (decimal?)sale.FullPayment.Amount : 0m)
+                            ) ?? 0m,
+
+                        AllSellers = sl.Users.Select(u => new SellersDto
+                        {
+                            SellerId = u.UserId,
+                            FullName = u.FullName,
+                            Email = u.Email,
+                            PhoneNumber = u.Mobile
+                        }).ToList()
+>>>>>>> 0e4a76f (Final Backend)
                     })
                     .FirstOrDefaultAsync();
 
-                if (showroom == null)
+                if (showroomDto == null)
                     return NotFound();
 
-                return Ok(showroom);
+                showroomDto.MainSeller = showroomDto.AllSellers.FirstOrDefault();
+                showroomDto.RevenueGrowth = GetRevenueGrowth(id);
+                showroomDto.Brands = await GetShowroomBrandsLogic(id);
+                showroomDto.SalesData = await GetMonthlySalesDataLogic(id);
+                showroomDto.Inventory = GetRecentInventory(id);
+                showroomDto.PopularModels = GetPopularModels(id);
+
+                return Ok(showroomDto);
             }
             catch (Exception ex)
             {
@@ -987,7 +1079,7 @@ namespace AutoSaleDN.Controllers
                 // Solution 1: Using conditional logic instead of null-conditional operator
                 var sales = await _context.CarSales
                     .Where(s => s.StoreListing.StoreLocationId == id)
-                    .OrderByDescending(s => s.SaleDate)
+                    .OrderByDescending(s => s.CreatedAt) // Sắp xếp theo ngày tạo đơn hàng mới nhất
                     .Select(s => new
                     {
                         s.SaleId,
@@ -997,12 +1089,11 @@ namespace AutoSaleDN.Controllers
                         Car = new
                         {
                             s.StoreListing.CarListing.ListingId,
-                            s.StoreListing.CarListing.ModelId,
                             Model = s.StoreListing.CarListing.Model.Name,
                             Manufacturer = s.StoreListing.CarListing.Model.Manufacturer.Name,
                             s.StoreListing.CarListing.Year,
-                            s.StoreListing.CarListing.Mileage,
                             s.StoreListing.CarListing.Price,
+<<<<<<< HEAD
                             s.StoreListing.CarListing.Condition,
                             s.StoreListing.CarListing.RentSell,
                             s.StoreListing.CarListing.Vin,
@@ -1015,9 +1106,14 @@ namespace AutoSaleDN.Controllers
                             Certified = s.StoreListing.CarListing.Certified,
                             Images = _context.CarImages.Where(img => img.ListingId == s.StoreListing.CarListing.ListingId).Select(img => img.Url).ToList(),
                             Available_Units = _context.CarListings.Count(x => x.ModelId == s.StoreListing.CarListing.ModelId)
+=======
+                            // TỐI ƯU: Sử dụng navigation property, không cần truy vấn con
+                            Images = s.StoreListing.CarListing.CarImages.Select(img => img.Url).ToList(),
+                            Available_Units = s.StoreListing.CurrentQuantity
+>>>>>>> 0e4a76f (Final Backend)
                         },
-                        s.CreatedAt,
-                        s.UpdatedAt
+                        CustomerName = s.Customer.FullName, // Thêm thông tin khách hàng
+                        s.CreatedAt
                     })
                     .ToListAsync();
 
@@ -1066,12 +1162,36 @@ namespace AutoSaleDN.Controllers
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }
+        private async Task<List<BrandPerformanceDto>> GetShowroomBrandsLogic(int id)
+        {
+            return await _context.StoreListings
+                .Where(sl => sl.StoreLocationId == id)
+                .GroupBy(sl => sl.CarListing.Model.CarManufacturer.Name)
+                .Select(g => new BrandPerformanceDto
+                {
+                    Name = g.Key,
+                    Count = g.SelectMany(l => l.CarSales)
+                             .Count(sale => sale.FullPayment != null && sale.FullPayment.PaymentStatus == "completed"),
+
+                    // SỬA LẠI TẠI ĐÂY: Quay lại logic tính tổng trực tiếp
+                    Revenue = g.SelectMany(l => l.CarSales)
+                               .Sum(sale =>
+                                   (sale.DepositPayment != null && sale.DepositPayment.PaymentStatus == "completed" ? (decimal?)sale.DepositPayment.Amount : 0m) +
+                                   (sale.FullPayment != null && sale.FullPayment.PaymentStatus == "completed" ? (decimal?)sale.FullPayment.Amount : 0m)
+                               ) ?? 0m
+                })
+                .Where(b => b.Count > 0 || b.Revenue > 0)
+                .OrderByDescending(b => b.Count)
+                .ThenByDescending(b => b.Revenue)
+                .ToListAsync();
+        }
 
         [HttpGet("showrooms/{id}/brands")]
         public async Task<IActionResult> GetShowroomBrands(int id)
         {
             try
             {
+<<<<<<< HEAD
                 var brands = await _context.StoreListings
                     .Where(sl => sl.StoreLocationId == id)
                     .GroupBy(sl => sl.CarListing.Model.Manufacturer.Name)
@@ -1087,6 +1207,9 @@ namespace AutoSaleDN.Controllers
                     .OrderByDescending(b => b.Count)
                     .ToListAsync();
 
+=======
+                var brands = await GetShowroomBrandsLogic(id);
+>>>>>>> 0e4a76f (Final Backend)
                 return Ok(brands);
             }
             catch (Exception ex)
@@ -1173,21 +1296,34 @@ namespace AutoSaleDN.Controllers
 
         private decimal GetRevenueGrowth(int showroomId)
         {
-            var currentMonthRevenue = _context.CarSales
-                .Where(s => s.StoreListing.StoreLocationId == showroomId
-                     && s.SaleDate >= DateTime.Now.AddMonths(-1))
-                .Sum(s => s.FinalPrice);
+            var today = DateTime.Now;
+            var startOfCurrentMonth = new DateTime(today.Year, today.Month, 1);
+            var startOfPreviousMonth = startOfCurrentMonth.AddMonths(-1);
 
-            var previousMonthRevenue = _context.CarSales
-                .Where(s => s.StoreListing.StoreLocationId == showroomId
-                     && s.SaleDate >= DateTime.Now.AddMonths(-2)
-                    && s.SaleDate < DateTime.Now.AddMonths(-1))
-                .Sum(s => s.FinalPrice);
+            // Truy vấn cơ sở cho các đơn hàng của showroom
+            var salesQuery = _context.CarSales
+                .Where(sale => sale.StoreListing.StoreLocationId == showroomId);
 
+            // Tính doanh thu tháng hiện tại
+            var currentMonthRevenue = salesQuery.Sum(sale =>
+                (sale.DepositPayment != null && sale.DepositPayment.PaymentStatus == "completed" && sale.DepositPayment.DateOfPayment >= startOfCurrentMonth ? (decimal?)sale.DepositPayment.Amount : 0m) +
+                (sale.FullPayment != null && sale.FullPayment.PaymentStatus == "completed" && sale.FullPayment.DateOfPayment >= startOfCurrentMonth ? (decimal?)sale.FullPayment.Amount : 0m)
+            ) ?? 0m;
+
+            // Tính doanh thu tháng trước
+            var previousMonthRevenue = salesQuery.Sum(sale =>
+                (sale.DepositPayment != null && sale.DepositPayment.PaymentStatus == "completed" && sale.DepositPayment.DateOfPayment >= startOfPreviousMonth && sale.DepositPayment.DateOfPayment < startOfCurrentMonth ? (decimal?)sale.DepositPayment.Amount : 0m) +
+                (sale.FullPayment != null && sale.FullPayment.PaymentStatus == "completed" && sale.FullPayment.DateOfPayment >= startOfPreviousMonth && sale.FullPayment.DateOfPayment < startOfCurrentMonth ? (decimal?)sale.FullPayment.Amount : 0m)
+            ) ?? 0m;
+
+            // Logic tính tăng trưởng không đổi
             if (previousMonthRevenue == 0)
-                return 0;
+            {
+                return currentMonthRevenue > 0 ? 100.0m : 0.0m;
+            }
 
-            return ((currentMonthRevenue - previousMonthRevenue) / previousMonthRevenue) * 100;
+            var growth = ((currentMonthRevenue - previousMonthRevenue) / previousMonthRevenue) * 100;
+            return Math.Round(growth, 2);
         }
 
         private List<BrandPerformanceDto> GetBrandPerformance(int showroomId)
@@ -1198,34 +1334,61 @@ namespace AutoSaleDN.Controllers
                 .Select(g => new BrandPerformanceDto
                 {
                     Name = g.Key,
+<<<<<<< HEAD
                     Count = g.Sum(sl => sl.CurrentQuantity),
                     Revenue = _context.CarSales
                         .Where(s => s.StoreListing.StoreLocationId == showroomId 
                             && s.StoreListing.CarListing.Model.Manufacturer.Name == g.Key)
                         .Sum(s => s.FinalPrice)
+=======
+                    // 'Count' là SỐ LƯỢNG XE ĐÃ BÁN THÀNH CÔNG
+                    Count = g.SelectMany(listing => listing.CarSales)
+                             .Count(sale =>
+                                 sale.FullPayment != null &&
+                                 sale.FullPayment.PaymentStatus == "completed"
+                             ),
+
+                    // 'Revenue' là TỔNG DOANH THU
+                    Revenue = g.SelectMany(listing => listing.CarSales)
+                               .Sum(sale =>
+                                   (sale.DepositPayment != null && sale.DepositPayment.PaymentStatus == "completed" ? (decimal?)sale.DepositPayment.Amount : 0m) +
+                                   (sale.FullPayment != null && sale.FullPayment.PaymentStatus == "completed" ? (decimal?)sale.FullPayment.Amount : 0m)
+                               ) ?? 0m
+>>>>>>> 0e4a76f (Final Backend)
                 })
-                .OrderByDescending(b => b.Count)
+                // THÊM DÒNG NÀY ĐỂ LỌC BỎ KẾT QUẢ BẰNG 0
+                .Where(b => b.Count > 0)
+                .OrderByDescending(b => b.Count) // Sắp xếp theo số lượng bán ra giảm dần
                 .ToList();
         }
 
-        private List<SalesDataDto> GetMonthlySalesData(int showroomId)
+        private async Task<List<SalesDataDto>> GetMonthlySalesDataLogic(int showroomId)
         {
-            var startDate = DateTime.Now.AddMonths(-1);
-            var endDate = DateTime.Now;
-            var salesData = new List<SalesDataDto>();
+            var startDate = DateTime.Now.AddMonths(-1).Date;
+            var endDate = DateTime.Now.Date;
 
+            var salesByDay = await _context.CarSales
+                .Where(s =>
+                    s.StoreListing.StoreLocationId == showroomId &&
+                    s.FullPayment != null &&
+                    s.FullPayment.PaymentStatus == "completed" &&
+                    s.FullPayment.DateOfPayment >= startDate &&
+                    s.FullPayment.DateOfPayment < endDate.AddDays(1))
+                .GroupBy(s => s.FullPayment.DateOfPayment.Date)
+                .Select(g => new
+                {
+                    Date = g.Key,
+                    Count = g.Count()
+                })
+                .ToDictionaryAsync(x => x.Date, x => x.Count);
+
+            var salesData = new List<SalesDataDto>();
             for (var date = startDate; date <= endDate; date = date.AddDays(1))
             {
-                var dailySales = _context.CarSales
-                    .Where(s => s.StoreListing.StoreLocationId == showroomId
-                        && s.SaleDate.HasValue
-                        && s.SaleDate.Value.Date == date.Date)
-                    .Count();
-
                 salesData.Add(new SalesDataDto
                 {
                     Date = date.ToString("yyyy-MM-dd"),
-                    Sold = dailySales
+                    Sold = salesByDay.ContainsKey(date) ? salesByDay[date] : 0
                 });
             }
 

@@ -36,6 +36,8 @@ namespace AutoSaleDN.Models
 
         public DbSet<StoreListing> StoreListings { get; set; }
 
+        public DbSet<TestDriveBooking> TestDriveBookings { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             // Unique constraints
