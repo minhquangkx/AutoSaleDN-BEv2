@@ -47,6 +47,8 @@ namespace AutoSaleDN.Models
         public DbSet<StoreListing> StoreListings { get; set; }
 >>>>>>> a2e0be0 (backend)
 
+        public DbSet<TestDriveBooking> TestDriveBookings { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
