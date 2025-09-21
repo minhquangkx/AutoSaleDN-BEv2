@@ -4,6 +4,7 @@ using AutoSaleDN.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace AutoSaleDN.Migrations
 {
     [DbContext(typeof(AutoSaleDbContext))]
-    partial class AutoSaleDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250727092857_InitialDB")]
+    partial class InitialDB
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -279,7 +282,7 @@ namespace AutoSaleDN.Migrations
                     b.Property<decimal?>("Price")
                         .HasColumnType("decimal(18,2)");
 
-                    b.Property<string>("Status")
+                    b.Property<string>("RentSell")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("UserId")
@@ -914,40 +917,6 @@ namespace AutoSaleDN.Migrations
                     b.ToTable("SaleStatus");
                 });
 
-            modelBuilder.Entity("AutoSaleDN.Models.SaleStatusHistory", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("SaleId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("SaleStatusId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("Timestamp")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("UserId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SaleId");
-
-                    b.HasIndex("SaleStatusId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("SaleStatusHistory");
-                });
-
             modelBuilder.Entity("AutoSaleDN.Models.StoreListing", b =>
                 {
                     b.Property<int>("StoreListingId")
@@ -971,11 +940,6 @@ namespace AutoSaleDN.Migrations
                     b.Property<int>("InitialQuantity")
                         .HasColumnType("int");
 
-                    b.Property<bool>("IsCurrent")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(true);
-
                     b.Property<decimal?>("LastPurchasePrice")
                         .HasColumnType("decimal(18,2)");
 
@@ -996,17 +960,14 @@ namespace AutoSaleDN.Migrations
 
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("StoreLocationId")
                         .HasColumnType("int");
 
                     b.HasKey("StoreListingId");
 
-                    b.HasIndex("ListingId")
-                        .IsUnique()
-                        .HasFilter("[IsCurrent] = 1");
+                    b.HasIndex("ListingId");
 
                     b.HasIndex("StoreLocationId");
 
@@ -1399,31 +1360,6 @@ namespace AutoSaleDN.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("AutoSaleDN.Models.SaleStatusHistory", b =>
-                {
-                    b.HasOne("AutoSaleDN.Models.CarSale", "CarSale")
-                        .WithMany("StatusHistory")
-                        .HasForeignKey("SaleId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("AutoSaleDN.Models.SaleStatus", "SaleStatus")
-                        .WithMany()
-                        .HasForeignKey("SaleStatusId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("AutoSaleDN.Models.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId");
-
-                    b.Navigation("CarSale");
-
-                    b.Navigation("SaleStatus");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("AutoSaleDN.Models.StoreListing", b =>
                 {
                     b.HasOne("AutoSaleDN.Models.CarListing", "CarListing")
@@ -1504,11 +1440,6 @@ namespace AutoSaleDN.Migrations
             modelBuilder.Entity("AutoSaleDN.Models.CarModel", b =>
                 {
                     b.Navigation("CarListings");
-                });
-
-            modelBuilder.Entity("AutoSaleDN.Models.CarSale", b =>
-                {
-                    b.Navigation("StatusHistory");
                 });
 
             modelBuilder.Entity("AutoSaleDN.Models.Payment", b =>
