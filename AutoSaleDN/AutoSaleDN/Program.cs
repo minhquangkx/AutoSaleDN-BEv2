@@ -46,9 +46,17 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseCors("AllowAll");
+
 app.UseAuthentication();
 app.UseAuthorization();
+<<<<<<< HEAD
 app.UseCors("AllowAll");
+=======
+
+
+>>>>>>> d1f2609 (Fix CORS server.)
 app.MapControllers();
 
 app.Run();
