@@ -396,6 +396,7 @@ namespace AutoSaleDN.Controllers
         }
 
         [HttpGet("orders")]
+<<<<<<< HEAD
         public async Task<IActionResult> GetOrders([FromQuery] int? statusId = null)
         {
             var userId = int.Parse(User.FindFirst("UserId").Value);
@@ -404,14 +405,224 @@ namespace AutoSaleDN.Controllers
                 query = query.Where(s => s.SaleStatusId == statusId.Value);
             var orders = await query.ToListAsync();
             return Ok(orders);
+=======
+        public async Task<IActionResult> GetMyOrders(
+    [FromQuery] int? statusId = null,
+    [FromQuery] int pageNumber = 1,
+    [FromQuery] int pageSize = 10) // Thêm phân trang
+        {
+            try
+            {
+                var userId = GetUserId();
+                if (userId == 0)
+                {
+                    return Unauthorized(new { message = "User not authenticated or user ID is invalid." });
+                }
+
+                // Bắt đầu câu truy vấn, AsNoTracking() giúp tăng hiệu năng cho các truy vấn chỉ đọc
+                var query = _context.CarSales.AsNoTracking();
+
+                // Lọc theo CustomerId (luôn cần)
+                query = query.Where(s => s.CustomerId == userId);
+
+                // Lọc theo statusId nếu có
+                if (statusId.HasValue)
+                {
+                    query = query.Where(s => s.SaleStatusId == statusId.Value);
+                }
+
+                // Lấy tổng số lượng đơn hàng trước khi phân trang để trả về cho client
+                var totalItems = await query.CountAsync();
+
+                var orders = await query
+                    .OrderByDescending(cs => cs.CreatedAt)
+                    .Skip((pageNumber - 1) * pageSize) // Bỏ qua các trang trước
+                    .Take(pageSize) // Lấy số lượng item cho trang hiện tại
+                    .Select(cs => new // Định hình dữ liệu (projection) để chỉ lấy các cột cần thiết
+                    {
+                        // Basic Order Details
+                        OrderId = cs.SaleId,
+                        cs.OrderNumber,
+                        cs.FinalPrice,
+                        cs.DepositAmount,
+                        cs.RemainingBalance,
+                        OrderDate = cs.CreatedAt,
+                        cs.DeliveryOption,
+                        cs.ExpectedDeliveryDate,
+                        cs.ActualDeliveryDate,
+                        cs.OrderType,
+
+                        // Sale Status
+                        CurrentSaleStatus = cs.SaleStatus.StatusName, // Lấy trực tiếp, không cần logic phức tạp
+
+                        // Car Details
+                        CarDetails = cs.StoreListing.CarListing != null ? new
+                        {
+                            ListingId = cs.StoreListing.CarListing.ListingId,
+                            Make = cs.StoreListing.CarListing.Model.CarManufacturer.Name,
+                            Model = cs.StoreListing.CarListing.Model.Name,
+                            Year = cs.StoreListing.CarListing.Year,
+                            Mileage = cs.StoreListing.CarListing.Mileage,
+                            Condition = cs.StoreListing.CarListing.Condition,
+                            // Lấy thông số kỹ thuật hiệu quả hơn
+                            Engine = cs.StoreListing.CarListing.Specifications.Select(spec => spec.Engine).FirstOrDefault(),
+                            Transmission = cs.StoreListing.CarListing.Specifications.Select(spec => spec.Transmission).FirstOrDefault(),
+                            FuelType = cs.StoreListing.CarListing.Specifications.Select(spec => spec.FuelType).FirstOrDefault(),
+                            ImageUrl = cs.StoreListing.CarListing.CarImages.Select(img => img.Url).FirstOrDefault()
+                        } : null,
+
+                        // Seller Details
+                        SellerDetails = cs.StoreListing.StoreLocation != null ? new
+                        {
+                            SellerInfo = cs.StoreListing.StoreLocation.Users
+                                .Select(u => new
+                                {
+                                    u.UserId,
+                                    u.FullName,
+                                    u.Email,
+                                    PhoneNumber = u.Mobile
+                                }).FirstOrDefault()
+                        } : null,
+
+                        // Không cần lấy chi tiết payment/address ở danh sách, chỉ cần ở trang chi tiết
+                    })
+                    .ToListAsync();
+
+                // Trả về kết quả kèm thông tin phân trang
+                return Ok(new
+                {
+                    TotalItems = totalItems,
+                    PageNumber = pageNumber,
+                    PageSize = pageSize,
+                    Data = orders
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in GetMyOrders: {ex.Message}");
+                return StatusCode(500, new { message = $"Internal server error: {ex.Message}" });
+            }
+>>>>>>> 3ece2b4 (Final Backend)
         }
+
 
         [HttpGet("orders/{id}")]
         public async Task<IActionResult> GetOrderDetail(int id)
         {
+<<<<<<< HEAD
             var userId = int.Parse(User.FindFirst("UserId").Value);
             var order = await _context.CarSales.FirstOrDefaultAsync(s => s.SaleId == id && s.CustomerId == userId);
             return order == null ? NotFound() : Ok(order);
+=======
+            try
+            {
+                var userId = GetUserId();
+                if (userId == 0)
+                {
+                    return Unauthorized(new { message = "User not authenticated." });
+                }
+
+                // Dùng Select để tạo DTO trực tiếp từ database, hiệu quả hơn dùng nhiều Include
+                var orderDetail = await _context.CarSales
+                    .AsNoTracking() // Tăng hiệu năng cho truy vấn chỉ đọc
+                    .Where(s => s.SaleId == id && s.CustomerId == userId)
+                    .Select(cs => new // Projection
+                    {
+                        cs.SaleId,
+                        cs.OrderNumber,
+                        CarDetails = new
+                        {
+                            ListingId = cs.StoreListing.CarListing.ListingId,
+                            ModelName = cs.StoreListing.CarListing.Model.Name,
+                            ManufacturerName = cs.StoreListing.CarListing.Model.CarManufacturer.Name,
+                            Price = cs.StoreListing.CarListing.Price,
+                            Year = cs.StoreListing.CarListing.Year,
+                            Mileage = cs.StoreListing.CarListing.Mileage,
+                            Condition = cs.StoreListing.CarListing.Condition,
+                            Vin = cs.StoreListing.CarListing.Vin,
+                            // SỬA LỖI: Thêm các trường còn thiếu từ Specifications
+                            Engine = cs.StoreListing.CarListing.Specifications.Select(s => s.Engine).FirstOrDefault(),
+                            Transmission = cs.StoreListing.CarListing.Specifications.Select(s => s.Transmission).FirstOrDefault(),
+                            FuelType = cs.StoreListing.CarListing.Specifications.Select(s => s.FuelType).FirstOrDefault(),
+                            // Tối ưu: Lấy danh sách ảnh và video trực tiếp trong câu truy vấn chính
+                            ImageUrls = cs.StoreListing.CarListing.CarImages.Select(ci => ci.Url).ToList(),
+                            VideoUrls = cs.StoreListing.CarListing.CarVideos.Select(cv => cv.Url).ToList()
+                        },
+                        cs.FinalPrice,
+                        cs.DepositAmount,
+                        cs.RemainingBalance,
+                        Status = cs.SaleStatus.StatusName,
+                        cs.DeliveryOption,
+                        ShippingAddress = cs.ShippingAddress != null ? new
+                        {
+                            cs.ShippingAddress.AddressId,
+                            cs.ShippingAddress.Address,
+                            cs.ShippingAddress.RecipientName,
+                            cs.ShippingAddress.RecipientPhone,
+                            cs.ShippingAddress.AddressType
+                        } : null,
+                        PickupLocation = cs.PickupStoreLocation != null ? new
+                        {
+                            cs.PickupStoreLocation.StoreLocationId,
+                            cs.PickupStoreLocation.Name,
+                            cs.PickupStoreLocation.Address,
+                        } : null,
+                        cs.ExpectedDeliveryDate,
+                        cs.ActualDeliveryDate,
+                        DepositPayment = cs.DepositPayment != null ? new
+                        {
+                            cs.DepositPayment.PaymentId,
+                            cs.DepositPayment.Amount,
+                            cs.DepositPayment.PaymentMethod,
+                            cs.DepositPayment.PaymentStatus,
+                            cs.DepositPayment.DateOfPayment
+                        } : null,
+                        FullPayment = cs.FullPayment != null ? new
+                        {
+                            cs.FullPayment.PaymentId,
+                            cs.FullPayment.Amount,
+                            cs.FullPayment.PaymentMethod,
+                            cs.FullPayment.PaymentStatus,
+                            cs.FullPayment.DateOfPayment
+                        } : null,
+                        StatusHistory = cs.StatusHistory
+                                        .OrderBy(sh => sh.Timestamp)
+                                        .Select(sh => new {
+                                            Id = sh.SaleStatusId,
+                                            Name = sh.SaleStatus.StatusName,
+                                            Date = sh.Timestamp,
+                                            Notes = sh.Notes
+                                        }).ToList(),
+                        cs.OrderType,
+                        cs.CreatedAt,
+                        cs.UpdatedAt,
+                        SellerDetails = cs.StoreListing.StoreLocation != null ? new
+                        {
+                            SellerInfo = cs.StoreListing.StoreLocation.Users
+                                .Select(u => new
+                                {
+                                    u.UserId,
+                                    u.FullName,
+                                    u.Email,
+                                    PhoneNumber = u.Mobile
+                                }).FirstOrDefault()
+                        } : null,
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (orderDetail == null)
+                {
+                    return NotFound(new { message = "Order not found or you do not have permission to view it." });
+                }
+
+                return Ok(orderDetail);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in GetOrderDetail: {ex.Message}");
+                return StatusCode(500, new { message = $"Internal server error: {ex.Message}" });
+            }
+>>>>>>> 3ece2b4 (Final Backend)
         }
 
         [HttpPut("orders/{id}/cancel")]
