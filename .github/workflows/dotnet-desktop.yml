@@ -1,0 +1,37 @@
+name: Deploy ASP.NET Backend
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '6.0.x' # Thay đổi theo version của bạn
+    
+    - name: Restore dependencies
+      run: dotnet restore ./AutoSaleDN
+    
+    - name: Build
+      run: dotnet build ./AutoSaleDN --no-restore --configuration Release
+    
+    - name: Publish
+      run: dotnet publish ./AutoSaleDN --no-build --configuration Release --output ./publish
+    
+    - name: Deploy to IIS
+      uses: SamKirkland/FTP-deploy-action@4.3.3
+      with:
+        server: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USERNAME }}
+        password: ${{ secrets.VPS_PASSWORD }}
+        local-dir: ./publish/
+        server-dir: ${{ secrets.BACKEND_DEPLOY_PATH }}
+        dangerous-clean-slate: true
