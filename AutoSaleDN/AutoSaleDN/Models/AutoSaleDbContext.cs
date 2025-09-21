@@ -36,10 +36,16 @@ namespace AutoSaleDN.Models
         public DbSet<CarVideo> CarVideos { get; set; }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
         public DbSet<StoreListing> StoreListings { get; set; }
 =======
         public DbSet<StoreListing> StoreListings { get; set; } // Giữ lại DbSet này
 >>>>>>> de2ffb0 (Backend)
+=======
+        public DbSet<SaleStatusHistory> SaleStatusHistory { get; set; }
+
+        public DbSet<StoreListing> StoreListings { get; set; }
+>>>>>>> a2e0be0 (backend)
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
