@@ -5,6 +5,11 @@ using BCrypt.Net;
 using Microsoft.AspNetCore.Authorization;
 using AutoSaleDN.DTO;
 using System.Reflection;
+using OfficeOpenXml.Style;
+using System.Drawing;
+using AutoSaleDN.Services;
+using System.Text;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 using OfficeOpenXml;
 
 namespace AutoSaleDN.Controllers
@@ -16,9 +21,12 @@ namespace AutoSaleDN.Controllers
     public class AdminController : ControllerBase
     {
         private readonly AutoSaleDbContext _context;
-        public AdminController(AutoSaleDbContext context)
+        private readonly IEmailService _emailService;
+        public AdminController(AutoSaleDbContext context, IEmailService emailService)
         {
             _context = context;
+            _emailService = emailService;
+
         }
         [HttpGet("customers")]
         public async Task<ActionResult<IEnumerable<object>>> GetCustomers()
@@ -682,6 +690,78 @@ namespace AutoSaleDN.Controllers
                 _context.CarInventories.Add(inventoryLog);
 
                 await _context.SaveChangesAsync();
+
+                // --- Logic gửi email đã được cập nhật ---
+                var customerEmails = await _context.Users
+                    .Where(u => u.Role == "Customer")
+                    .Select(u => u.Email)
+                    .ToListAsync();
+
+                // Lấy tên Model từ ModelId
+                var carModel = await _context.CarModels
+                    .Where(m => m.ModelId == dto.ModelId)
+                    .Select(m => m.Name)
+                    .FirstOrDefaultAsync();
+
+                var carImagesHtml = new StringBuilder();
+                if (dto.ImageUrls != null && dto.ImageUrls.Any())
+                {
+                    carImagesHtml.Append("<div style=\"text-align:center; margin-top:20px;\">");
+                    foreach (var url in dto.ImageUrls)
+                    {
+                        carImagesHtml.Append($"<img src=\"{url}\" alt=\"{carModel}\" style=\"width:100%;max-width:600px;height:auto;margin-bottom:15px;border-radius:8px;border:1px solid #e0e0e0;\"/>");
+                    }
+                    carImagesHtml.Append("</div>");
+                }
+
+                var emailSubject = $"New Car Alert: A new {carModel} is now available!";
+                var emailBody = $@"
+        <div style=""font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #f7f7f7; padding: 20px; line-height: 1.6; color: #333;"">
+            <div style=""max-width: 600px; margin: auto; background-color: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);"">
+                <div style=""text-align: center; padding-bottom: 20px; border-bottom: 2px solid #007bff;"">
+                    <h1 style=""color: #007bff; font-size: 28px; margin: 0;"">AutoSale Đà Nẵng</h1>
+                    <p style=""font-size: 16px; color: #555; margin: 5px 0 0;"">Your next dream car awaits!</p>
+                </div>
+                <div style=""padding: 20px 0; text-align: center;"">
+                    <h2 style=""font-size: 24px; color: #2a2a2a; margin-top: 0;"">New Arrival!</h2>
+                    <p style=""font-size: 18px; color: #555;"">We're thrilled to announce a new addition to our inventory:</p>
+                </div>
+                {carImagesHtml.ToString()}
+                <div style=""padding: 20px 0; border-top: 1px solid #e0e0e0; border-bottom: 1px solid #e0e0e0;"">
+                    <table style=""width: 100%; border-collapse: collapse;"">
+                        <tr>
+                            <td style=""padding: 8px 0;""><b style=""color: #007bff;"">Model:</b></td>
+                            <td style=""padding: 8px 0; text-align: right;"">{carModel}</td>
+                        </tr>
+                        <tr>
+                            <td style=""padding: 8px 0;""><b style=""color: #007bff;"">Year:</b></td>
+                            <td style=""padding: 8px 0; text-align: right;"">{dto.Year}</td>
+                        </tr>
+                        <tr>
+                            <td style=""padding: 8px 0;""><b style=""color: #007bff;"">Price:</b></td>
+                            <td style=""padding: 8px 0; text-align: right; color: #d9534f; font-weight: bold;"">{car.Price?.ToString("C")}</td>
+                        </tr>
+                    </table>
+                </div>
+                <div style=""text-align: center; padding-top: 25px;"">
+                    <a href=""https://autosaledn.store"" style=""display: inline-block; padding: 12px 25px; background-color: #007bff; color: #ffffff; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: background-color 0.3s;"">
+                        View Details on Website
+                    </a>
+                </div>
+                <div style=""text-align: center; padding-top: 25px; color: #888;"">
+                    <p style=""margin: 0; font-size: 12px;"">Thank you for your interest!</p>
+                    <p style=""margin: 5px 0 0; font-size: 12px;"">The AutoSale Team</p>
+                </div>
+            </div>
+        </div>
+        ";
+
+                foreach (var email in customerEmails)
+                {
+                    await _emailService.SendEmailAsync(email, emailSubject, emailBody);
+                }
+                // --- Kết thúc logic gửi email đã cập nhật ---
+
                 await transaction.CommitAsync();
 
                 return Ok(new { success = true, message = "Car added successfully.", listingId = car.ListingId });
@@ -1130,9 +1210,11 @@ namespace AutoSaleDN.Controllers
         {
             var y = year ?? DateTime.UtcNow.Year;
             var m = month ?? DateTime.UtcNow.Month;
-            var sales = await _context.CarSales
-                .Where(s => s.SaleDate.HasValue && s.SaleDate.Value.Year == y && s.SaleDate.Value.Month == m)
-                .SumAsync(s => (decimal?)s.FinalPrice) ?? 0;
+            var sales = await _context.Payments
+                .Where(p => p.PaymentStatus == "completed")
+                .Where(p => p.DateOfPayment.Year == y && p.DateOfPayment.Month == m)
+                .Where(p => p.PaymentForSale != null)
+                .SumAsync(p => (decimal?)p.Amount) ?? 0;
             return Ok(new { year = y, month = m, totalRevenue = sales });
         }
 
@@ -1140,9 +1222,11 @@ namespace AutoSaleDN.Controllers
         public async Task<IActionResult> GetYearlyRevenueReport(int? year = null)
         {
             var y = year ?? DateTime.UtcNow.Year;
-            var sales = await _context.CarSales
-                .Where(s => s.SaleDate.HasValue && s.SaleDate.Value.Year == y)
-                .SumAsync(s => (decimal?)s.FinalPrice) ?? 0;
+            var sales = await _context.Payments
+                .Where(p => p.PaymentStatus == "completed")
+                .Where(p => p.DateOfPayment.Year == y)
+                .Where(p => p.PaymentForSale != null)
+                .SumAsync(p => (decimal?)p.Amount) ?? 0;
             return Ok(new { year = y, totalRevenue = sales });
         }
 
@@ -1310,21 +1394,33 @@ namespace AutoSaleDN.Controllers
         {
             try
             {
-                var showrooms = await _context.StoreLocations
+                // Xác định ngày đầu tiên của tháng hiện tại
+                var startOfCurrentMonth = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+
+                var showroomsData = await _context.StoreLocations
                     .Select(sl => new
                     {
+                        // Thông tin cơ bản
                         Id = sl.StoreLocationId,
                         Name = sl.Name,
                         Location = sl.Address,
-                        TotalCars = sl.StoreListings.Sum(sl => sl.CurrentQuantity),
+                        TotalCars = _context.StoreListings
+                                        .Where(listing => listing.StoreLocationId == sl.StoreLocationId)
+                                        .Sum(listing => listing.CurrentQuantity),
+
+                        // 1. TÍNH TỔNG SỐ XE BÁN (TOÀN THỜI GIAN)
+                        TotalSoldAllTime = _context.CarSales
+                                             .Count(sale => sale.StoreListing.StoreLocationId == sl.StoreLocationId),
+
+                        // 2. TÍNH SỐ XE BÁN TRONG THÁNG HIỆN TẠI
                         SoldThisMonth = _context.CarSales
-                            .Where(s => s.StoreListing.StoreLocationId == sl.StoreLocationId
-                                 && s.SaleDate >= DateTime.Now.AddMonths(-1))
-                            .Count(),
+                                            .Count(sale => sale.StoreListing.StoreLocationId == sl.StoreLocationId &&
+                                                           sale.SaleDate >= startOfCurrentMonth),
+
+                        // Các thông tin khác
                         Revenue = _context.CarSales
-                            .Where(s => s.StoreListing.StoreLocationId == sl.StoreLocationId
-                                 && s.SaleDate >= DateTime.Now.AddMonths(-1))
-                            .Sum(s => s.FinalPrice),
+                                        .Where(s => s.StoreListing.StoreLocationId == sl.StoreLocationId)
+                                        .Sum(s => s.FinalPrice),
                         Sellers = _context.Users
                             .Where(u => u.StoreLocationId == sl.StoreLocationId)
                             .Select(u => new SellersDto
@@ -1338,13 +1434,15 @@ namespace AutoSaleDN.Controllers
                     })
                     .ToListAsync();
 
-                var result = showrooms.Select(s => new ShowroomDto
+                // Map kết quả sang DTO để trả về (đã bao gồm trường mới)
+                var result = showroomsData.Select(s => new ShowroomDto
                 {
                     Id = s.Id,
                     Name = s.Name,
                     Location = s.Location,
                     TotalCars = s.TotalCars,
                     SoldThisMonth = s.SoldThisMonth,
+                    TotalSoldAllTime = s.TotalSoldAllTime, // Map giá trị mới
                     Revenue = s.Revenue,
                     MainSeller = s.Sellers.FirstOrDefault(),
                     AllSellers = s.Sellers,
@@ -1367,6 +1465,9 @@ namespace AutoSaleDN.Controllers
         {
             try
             {
+                // Xác định ngày đầu tiên của tháng hiện tại để tính toán cho chính xác
+                var startOfCurrentMonth = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+
                 var showroom = await _context.StoreLocations
                     .Where(sl => sl.StoreLocationId == id)
                     .Select(sl => new ShowroomDto
@@ -1374,39 +1475,37 @@ namespace AutoSaleDN.Controllers
                         Id = sl.StoreLocationId,
                         Name = sl.Name,
                         Location = sl.Address,
-                        TotalCars = sl.StoreListings.Sum(sl => sl.CurrentQuantity),
+
+                        // SỬA LẠI: Truy vấn trực tiếp để đảm bảo tính đúng tổng xe trong kho
+                        TotalCars = _context.StoreListings
+                                        .Where(listing => listing.StoreLocationId == id)
+                                        .Sum(listing => (int?)listing.CurrentQuantity) ?? 0,
+
+                        // SỬA LẠI: Đếm số xe bán trong tháng dương lịch hiện tại
                         SoldThisMonth = _context.CarSales
-                            .Where(s => s.StoreListing.StoreLocationId == id
-                                && s.SaleDate >= DateTime.Now.AddMonths(-1))
-                            .Count(),
+                                            .Count(s => s.StoreListing.StoreLocationId == id &&
+                                                        s.SaleDate >= startOfCurrentMonth),
+
+                        // SỬA LẠI: Lấy TỔNG DOANH THU của showroom, không giới hạn thời gian
                         Revenue = _context.CarSales
-                            .Where(s => s.StoreListing.StoreLocationId == id
-                                && s.SaleDate >= DateTime.Now.AddMonths(-1))
-                            .Sum(s => s.FinalPrice),
+                                        .Where(s => s.StoreListing.StoreLocationId == id)
+                                        .Sum(s => (decimal?)s.FinalPrice) ?? 0,
+
+                        // Các hàm helper được gọi từ đây sẽ hoạt động đúng với mục đích của chúng
                         RevenueGrowth = GetRevenueGrowth(id),
                         Brands = GetBrandPerformance(id),
                         SalesData = GetMonthlySalesData(id),
                         Inventory = GetRecentInventory(id),
                         PopularModels = GetPopularModels(id),
+
+                        // Logic lấy Sellers giữ nguyên
                         MainSeller = _context.Users
                             .Where(u => u.StoreLocationId == id)
-                            .Select(u => new SellersDto
-                            {
-                                SellerId = u.UserId,
-                                FullName = u.FullName,
-                                Email = u.Email,
-                                PhoneNumber = u.Mobile
-                            })
+                            .Select(u => new SellersDto { /*...*/ })
                             .FirstOrDefault(),
                         AllSellers = _context.Users
                             .Where(u => u.StoreLocationId == id)
-                            .Select(u => new SellersDto
-                            {
-                                SellerId = u.UserId,
-                                FullName = u.FullName,
-                                Email = u.Email,
-                                PhoneNumber = u.Mobile
-                            })
+                            .Select(u => new SellersDto { /*...*/ })
                             .ToList()
                     })
                     .FirstOrDefaultAsync();
@@ -1427,7 +1526,6 @@ namespace AutoSaleDN.Controllers
         {
             try
             {
-                // Solution 1: Using conditional logic instead of null-conditional operator
                 var sales = await _context.CarSales
                     .Where(s => s.StoreListing.StoreLocationId == id)
                     .OrderByDescending(s => s.SaleDate)
@@ -1457,7 +1555,7 @@ namespace AutoSaleDN.Controllers
                                 : 5,
                             Certified = s.StoreListing.CarListing.Certified,
                             Images = _context.CarImages.Where(img => img.ListingId == s.StoreListing.CarListing.ListingId).Select(img => img.Url).ToList(),
-                            Available_Units = _context.CarListings.Count(x => x.ModelId == s.StoreListing.CarListing.ModelId)
+                            Available_Units = s.StoreListing.CurrentQuantity
                         },
                         s.CreatedAt,
                         s.UpdatedAt
@@ -1515,17 +1613,16 @@ namespace AutoSaleDN.Controllers
         {
             try
             {
-                var brands = await _context.StoreListings
-                    .Where(sl => sl.StoreLocationId == id)
-                    .GroupBy(sl => sl.CarListing.Model.CarManufacturer.Name)
+                var brands = await _context.CarSales // Bắt đầu từ bảng CarSales để phân tích dữ liệu bán hàng
+                    .Where(s => s.StoreListing.StoreLocationId == id)
+                    .GroupBy(s => s.StoreListing.CarListing.Model.CarManufacturer.Name)
                     .Select(g => new
                     {
                         Name = g.Key,
-                        Count = g.Sum(sl => sl.CurrentQuantity),
-                        Revenue = _context.CarSales
-                            .Where(s => s.StoreListing.StoreLocationId == id 
-                                && s.StoreListing.CarListing.Model.CarManufacturer.Name == g.Key)
-                            .Sum(s => s.FinalPrice)
+                        // SỬA LẠI: Đếm số lượng xe đã bán của thương hiệu này
+                        Count = g.Count(),
+                        // Doanh thu tính từ chính nhóm giao dịch này, rất hiệu quả
+                        Revenue = g.Sum(s => s.FinalPrice)
                     })
                     .OrderByDescending(b => b.Count)
                     .ToListAsync();
@@ -1581,73 +1678,194 @@ namespace AutoSaleDN.Controllers
             {
                 var showroom = await _context.StoreLocations.FindAsync(model.ShowroomId);
                 if (showroom == null)
-                    return NotFound();
+                    return NotFound("Showroom not found.");
 
-                // Generate report data
-                var reportData = new
-                {
-                    Showroom = new
-                    {
-                        showroom.Name,
-                        showroom.Address,
-                        DateGenerated = DateTime.Now
-                    },
-                    Summary = await GetShowroomSummary(model.ShowroomId),
-                    Sales = GetMonthlySalesData(model.ShowroomId),        // Remove await
-                    Inventory = GetRecentInventory(model.ShowroomId),      // Remove await
-                    Brands = GetBrandPerformance(model.ShowroomId)         // Remove await
-                };
+                // --- STEP 1: FETCH DATA (No changes here) ---
+                var summaryData = await GetShowroomSummaryAsync(model.ShowroomId);
+                var brandData = await GetBrandPerformanceAsync(model.ShowroomId);
+                var inventoryData = await GetRecentInventoryAsync(model.ShowroomId);
 
-                // Generate Excel file
+                // --- STEP 2: CREATE AND STYLE THE EXCEL FILE ---
                 var memoryStream = new MemoryStream();
                 using (var package = new ExcelPackage(memoryStream))
                 {
-                    // Add worksheet and populate data
-                    var worksheet = package.Workbook.Worksheets.Add("Report");
+                    var worksheet = package.Workbook.Worksheets.Add("Showroom Report");
 
-                    // Example of how to populate the worksheet with data
-                    // You can expand this based on your actual data structure
+                    // Define colors for styling
+                    var headerBackgroundColor = ColorTranslator.FromHtml("#0D47A1"); // Dark Blue
+                    var subHeaderBackgroundColor = ColorTranslator.FromHtml("#42A5F5"); // Lighter Blue
+                    var headerFontColor = Color.White;
+                    var alternateRowColor = ColorTranslator.FromHtml("#F5F5F5"); // Light Gray
 
-                    // Add headers
-                    worksheet.Cells[1, 1].Value = "Showroom Report";
-                    worksheet.Cells[2, 1].Value = "Name:";
-                    worksheet.Cells[2, 2].Value = reportData.Showroom.Name;
-                    worksheet.Cells[3, 1].Value = "Address:";
-                    worksheet.Cells[3, 2].Value = reportData.Showroom.Address;
-                    worksheet.Cells[4, 1].Value = "Date Generated:";
-                    worksheet.Cells[4, 2].Value = reportData.Showroom.DateGenerated;
+                    // --- Report Header Section ---
+                    worksheet.Cells["A1:D1"].Merge = true;
+                    worksheet.Cells["A1"].Value = $"Showroom Report: {showroom.Name}";
+                    worksheet.Cells["A1"].Style.Font.Bold = true;
+                    worksheet.Cells["A1"].Style.Font.Size = 20;
+                    worksheet.Cells["A1"].Style.VerticalAlignment = ExcelVerticalAlignment.Center;
 
-                    // Add summary section
-                    int row = 6;
-                    worksheet.Cells[row, 1].Value = "Summary";
-                    // Add summary data here based on your Summary object structure
+                    worksheet.Cells["A2"].Value = "Date Generated:";
+                    worksheet.Cells["B2"].Value = DateTime.Now;
+                    worksheet.Cells["B2"].Style.Numberformat.Format = "yyyy-mm-dd hh:mm AM/PM";
 
-                    // Add sales data
-                    row += 3;
-                    worksheet.Cells[row, 1].Value = "Sales Data";
-                    // Add sales data here based on your Sales list structure
+                    int row = 4;
 
-                    // Add inventory data
-                    row += 3;
-                    worksheet.Cells[row, 1].Value = "Inventory Data";
-                    // Add inventory data here based on your Inventory list structure
+                    // --- Section 1: Summary Data ---
+                    worksheet.Cells[row, 1, row, 2].Merge = true;
+                    worksheet.Cells[row, 1].Value = "Activity Summary";
+                    ApplyHeaderStyle(worksheet.Cells[row, 1], headerBackgroundColor, headerFontColor);
+                    row++;
 
-                    // Add brands data
-                    row += 3;
+                    worksheet.Cells[row, 1].Value = "Total Revenue";
+                    worksheet.Cells[row, 2].Value = summaryData.Revenue;
+                    worksheet.Cells[row, 2].Style.Numberformat.Format = "\"$\"#,##0.00";
+                    row++;
+                    worksheet.Cells[row, 1].Value = "Units Sold This Month";
+                    worksheet.Cells[row, 2].Value = summaryData.SoldThisMonth;
+                    row++;
+                    worksheet.Cells[row, 1].Value = "Total Cars in Stock";
+                    worksheet.Cells[row, 2].Value = summaryData.TotalCars;
+                    // Add border to summary data
+                    worksheet.Cells[row - 2, 1, row, 2].Style.Border.BorderAround(ExcelBorderStyle.Thin);
+                    row += 2;
+
+                    // --- Section 2: Brand Performance Data ---
+                    worksheet.Cells[row, 1, row, 3].Merge = true;
                     worksheet.Cells[row, 1].Value = "Brand Performance";
-                    // Add brands data here based on your Brands list structure
+                    ApplyHeaderStyle(worksheet.Cells[row, 1], headerBackgroundColor, headerFontColor);
+                    row++;
+                    worksheet.Cells[row, 1].Value = "Brand";
+                    worksheet.Cells[row, 2].Value = "Units Sold";
+                    worksheet.Cells[row, 3].Value = "Revenue";
+                    ApplySubHeaderStyle(worksheet.Cells[row, 1, row, 3], subHeaderBackgroundColor, headerFontColor);
+                    row++;
+                    foreach (var (brand, index) in brandData.Select((value, i) => (value, i)))
+                    {
+                        worksheet.Cells[row, 1].Value = brand.Name;
+                        worksheet.Cells[row, 2].Value = brand.Count;
+                        worksheet.Cells[row, 3].Value = brand.Revenue;
+                        worksheet.Cells[row, 3].Style.Numberformat.Format = "\"$\"#,##0.00";
+                        if (index % 2 == 1) // Apply alternating row color
+                        {
+                            worksheet.Cells[row, 1, row, 3].Style.Fill.PatternType = ExcelFillStyle.Solid;
+                            worksheet.Cells[row, 1, row, 3].Style.Fill.BackgroundColor.SetColor(alternateRowColor);
+                        }
+                        row++;
+                    }
+                    worksheet.Cells[row - brandData.Count - 1, 1, row - 1, 3].Style.Border.BorderAround(ExcelBorderStyle.Thin);
+                    row += 1;
 
+                    // --- Section 3: Recent Inventory Data ---
+                    worksheet.Cells[row, 1, row, 4].Merge = true;
+                    worksheet.Cells[row, 1].Value = "Recent Inventory Activities";
+                    ApplyHeaderStyle(worksheet.Cells[row, 1], headerBackgroundColor, headerFontColor);
+                    row++;
+                    worksheet.Cells[row, 1].Value = "Date";
+                    worksheet.Cells[row, 2].Value = "Car Model";
+                    worksheet.Cells[row, 3].Value = "Quantity";
+                    worksheet.Cells[row, 4].Value = "Transaction Type";
+                    ApplySubHeaderStyle(worksheet.Cells[row, 1, row, 4], subHeaderBackgroundColor, headerFontColor);
+                    row++;
+                    foreach (var (item, index) in inventoryData.Select((value, i) => (value, i)))
+                    {
+                        worksheet.Cells[row, 1].Value = item.Date;
+                        worksheet.Cells[row, 2].Value = item.Model;
+                        worksheet.Cells[row, 3].Value = item.Quantity;
+                        worksheet.Cells[row, 4].Value = item.Type;
+                        if (index % 2 == 1) // Apply alternating row color
+                        {
+                            worksheet.Cells[row, 1, row, 4].Style.Fill.PatternType = ExcelFillStyle.Solid;
+                            worksheet.Cells[row, 1, row, 4].Style.Fill.BackgroundColor.SetColor(alternateRowColor);
+                        }
+                        row++;
+                    }
+                    worksheet.Cells[row - inventoryData.Count - 1, 1, row - 1, 4].Style.Border.BorderAround(ExcelBorderStyle.Thin);
+
+                    worksheet.Cells[worksheet.Dimension.Address].AutoFitColumns();
                     package.Save();
                 }
 
                 memoryStream.Position = 0;
                 return File(memoryStream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    $"showroom_report_{DateTime.Now:yyyyMMdd}.xlsx");
+                    $"showroom_report_{showroom.Name.Replace(" ", "_")}_{DateTime.Now:yyyyMMdd}.xlsx");
             }
             catch (Exception ex)
             {
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
+        }
+
+        // --- HELPER METHODS FOR STYLING ---
+        private void ApplyHeaderStyle(ExcelRange cells, Color backgroundColor, Color fontColor)
+        {
+            cells.Style.Font.Bold = true;
+            cells.Style.Font.Color.SetColor(fontColor);
+            cells.Style.Font.Size = 14;
+            cells.Style.Fill.PatternType = ExcelFillStyle.Solid;
+            cells.Style.Fill.BackgroundColor.SetColor(backgroundColor);
+            cells.Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
+        }
+
+        private void ApplySubHeaderStyle(ExcelRange cells, Color backgroundColor, Color fontColor)
+        {
+            cells.Style.Font.Bold = true;
+            cells.Style.Font.Color.SetColor(fontColor);
+            cells.Style.Fill.PatternType = ExcelFillStyle.Solid;
+            cells.Style.Fill.BackgroundColor.SetColor(backgroundColor);
+        }
+
+        private async Task<ShowroomSummaryDto> GetShowroomSummaryAsync(int showroomId)
+        {
+            var startOfCurrentMonth = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+
+            var summary = new ShowroomSummaryDto
+            {
+                Revenue = await _context.CarSales
+                    .Where(s => s.StoreListing.StoreLocationId == showroomId)
+                    .SumAsync(s => (decimal?)s.FinalPrice) ?? 0,
+
+                SoldThisMonth = await _context.CarSales
+                    .CountAsync(s => s.StoreListing.StoreLocationId == showroomId && s.SaleDate >= startOfCurrentMonth),
+
+                TotalCars = await _context.StoreListings
+                    .Where(sl => sl.StoreLocationId == showroomId)
+                    .SumAsync(sl => (int?)sl.CurrentQuantity) ?? 0,
+
+                // Assuming GetRevenueGrowth is synchronous or handled elsewhere
+                RevenueGrowth = GetRevenueGrowth(showroomId)
+            };
+            return summary;
+        }
+
+        private async Task<List<BrandPerformanceDto>> GetBrandPerformanceAsync(int showroomId)
+        {
+            return await _context.CarSales
+                .Where(s => s.StoreListing.StoreLocationId == showroomId)
+                .GroupBy(s => s.StoreListing.CarListing.Model.CarManufacturer.Name)
+                .Select(g => new BrandPerformanceDto
+                {
+                    Name = g.Key,
+                    Count = g.Count(),
+                    Revenue = g.Sum(s => s.FinalPrice)
+                })
+                .OrderByDescending(b => b.Count)
+                .ToListAsync();
+        }
+        private async Task<List<InventoryItemDto>> GetRecentInventoryAsync(int showroomId)
+        {
+            return await _context.CarInventories
+                .Where(i => i.StoreListing.StoreLocationId == showroomId)
+                .OrderByDescending(i => i.CreatedAt)
+                .Take(20) // Fetch the last 20 activities
+                .Select(i => new InventoryItemDto
+                {
+                    Model = i.StoreListing.CarListing.Model.Name,
+                    Date = i.CreatedAt.ToString("yyyy-MM-dd"),
+                    Quantity = i.Quantity,
+                    Type = i.TransactionType == 1 ? "Stock-in" :
+                           i.TransactionType == 2 ? "Stock-out (Sale)" : "Adjustment"
+                })
+                .ToListAsync();
         }
 
         private decimal GetRevenueGrowth(int showroomId)
@@ -1765,14 +1983,15 @@ namespace AutoSaleDN.Controllers
                 TotalCars = _context.StoreListings
                     .Where(sl => sl.StoreLocationId == showroomId)
                     .Sum(sl => sl.CurrentQuantity),
+
                 Revenue = _context.CarSales
-                    .Where(s => s.StoreListing.StoreLocationId == showroomId 
-                        && s.SaleDate >= DateTime.Now.AddMonths(-1))
+                    .Where(s => s.StoreListing.StoreLocationId == showroomId)
                     .Sum(s => s.FinalPrice),
+
                 RevenueGrowth = GetRevenueGrowth(showroomId),
                 SoldThisMonth = _context.CarSales
-                    .Where(s => s.StoreListing.StoreLocationId == showroomId 
-                        && s.SaleDate >= DateTime.Now.AddMonths(-1))
+                    .Where(s => s.StoreListing.StoreLocationId == showroomId
+                           && s.SaleDate >= DateTime.Now.AddMonths(-1))
                     .Count()
             };
         }
@@ -1780,7 +1999,7 @@ namespace AutoSaleDN.Controllers
         public class ExportReportDto
         {
             public int ShowroomId { get; set; }
-            public string DateRange { get; set; } // "thisMonth", "lastMonth", "thisYear"
+            public string? DateRange { get; set; } // "thisMonth", "lastMonth", "thisYear"
         }
 
         public class ShowroomSummaryDto
@@ -2040,6 +2259,27 @@ namespace AutoSaleDN.Controllers
             }
         }
 
+        [HttpPost("showrooms/add")]
+        public async Task<IActionResult> Addshowrooms([FromBody] ShowroomAddDto showroom)
+        {
+            if (await _context.StoreLocations.AnyAsync(x => x.Name == showroom.Name))
+                return BadRequest("Showroom Name already exists.");
+
+            var showrooms = new StoreLocation
+            {
+                Name = showroom.Name,
+                Address = showroom.Address
+            };
+            _context.StoreLocations.Add(showrooms);
+            await _context.SaveChangesAsync();
+            return Ok(new { message = "Add New Showroom successful" });
+        }
+        public class ShowroomAddDto
+        {
+            public string Name { get; set; }
+            public string Address { get; set; }
+        }
+
         // Request model for updating transaction status
         public class UpdateTransactionStatusRequest
         {
@@ -2207,8 +2447,12 @@ namespace AutoSaleDN.Controllers
                     return StatusCode(500, new { message = "Error during inventory import.", error = ex.Message, innerException = ex.InnerException?.Message });
                 }
             }
-        }
-       
+
+            }
+
+
+
+
 
         public enum InventoryTransactionType
         {
